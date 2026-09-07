@@ -22,6 +22,8 @@ ignore = [
     "D100",
     "D102",
     "D103",
+    "ANN201",
+    "N813",    # import CamelCase as python_case
     "CPY001",  # copyright
     "SIM105",  # try/except->context
     "EXE002",  # shebang
