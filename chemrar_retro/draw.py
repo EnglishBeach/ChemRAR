@@ -11,10 +11,10 @@ from PIL import (
 )
 from rdkit.Chem import Draw as rd_draw  # type: ignore
 
-from . import functions
+from . import retro
 
 
-def draw_routes_table(engine: functions.Engine, scores: list[dict[str, float]]):
+def draw_routes_table(engine: retro.Engine, scores: list[dict[str, float]]):
     images: list[pimage.Image] = engine.routes.make_images()  # type: ignore
     if not images:
         msg = "No routes in engine"

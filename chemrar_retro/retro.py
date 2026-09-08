@@ -74,8 +74,8 @@ def add_scorers(engine: Engine, scorers: list[retro_scorers.BaseScorer]) -> Engi
 
 
 def generate_tree(  # noqa: PLR0913
-    smiles: str,
     engine: Engine,
+    smiles: str,
     *,
     max_transforms: int | None = None,
     time_limit: int | None = None,
