@@ -1,1 +1,4 @@
 .venv
+download
+__pycache__
+tmp
