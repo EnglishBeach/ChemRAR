@@ -4,13 +4,25 @@ from enum import Enum
 import threading
 
 from aizynthfinder import aizynthfinder
-from aizynthfinder.aizynthfinder import AiZynthFinder as Engine
+
+# from aizynthfinder.aizynthfinder import AiZynthFinder as Engine
 from pydantic import BaseModel
 from rdkit import Chem as rd
 
 from . import _utils, config as retro_config, scorers as retro_scorers
 
 _LOCK = threading.Lock()
+
+
+class Engine(aizynthfinder.AiZynthFinder):
+    @property
+    def search_rewards(self) -> dict[str, float]:
+        rewards = self.config.search.algorithm_config["search_rewards"]
+        if len(rewards) == 1:
+            weights = [1]
+        else:
+            weights = self.config.search.algorithm_config["search_rewards_weights"]
+        return dict(zip(rewards, weights, strict=True))
 
 
 def create_engine(
@@ -29,6 +41,13 @@ def create_engine(
         stock=stock,
     )
     return Engine(configdict=init_config.model_dump(mode="json"))
+
+
+def add_scorers(engine: Engine, scorers: list[retro_scorers.BaseScorer]) -> Engine:
+    e = _copy_engine(engine)
+    for scorer in scorers:
+        e.scorers.load(scorer)
+    return e
 
 
 def select(  # noqa: PLR0913
@@ -59,17 +78,13 @@ def select(  # noqa: PLR0913
         if set(search_scorers) - set(e.scorers.names()):
             msg = "Only exists scorers are allowed"
             raise ValueError(msg)
-
+        if len(search_scorers):
+            weights = []
+        else:
+            weights = list(search_scorers.values())
         e.config.search.algorithm_config["search_rewards"] = list(search_scorers)
-        e.config.search.algorithm_config["search_rewards_weights"] = list(search_scorers.values())
+        e.config.search.algorithm_config["search_rewards_weights"] = weights
 
-    return e
-
-
-def add_scorers(engine: Engine, scorers: list[retro_scorers.BaseScorer]) -> Engine:
-    e = _copy_engine(engine)
-    for scorer in scorers:
-        e.scorers.load(scorer)
     return e
 
 
@@ -79,7 +94,6 @@ def generate_tree(  # noqa: PLR0913
     *,
     max_transforms: int | None = None,
     time_limit: int | None = None,
-    iteration_limit: int | None = None,
     return_first: bool | None = None,
     search_rewards: dict[str, float] | None = None,
 ) -> Engine:
@@ -88,11 +102,20 @@ def generate_tree(  # noqa: PLR0913
         raise ValueError(msg)
 
     engine = _copy_engine(engine)
+
+    if not engine.config.expansion_policy.selection:
+        msg = "No expansion policy selected"
+        raise ValueError(msg)
+
+    if not engine.config.search.algorithm_config["search_rewards"]:
+        msg = "No search rewards selected"
+        raise ValueError(msg)
+
     _change_search_configs(
         engine,
         max_transforms=max_transforms,
         time_limit=time_limit,
-        iteration_limit=iteration_limit,
+        iteration_limit=0,
         return_first=return_first,
         search_scorers=search_rewards,
     )
@@ -122,24 +145,24 @@ class ScoringStatistics(BaseModel):
     max_children: int
     number_of_routes: int
     number_of_solved_routes: int
-    top_score: int
-    is_solved: str
+    top_score: float
+    is_solved: bool
 
     number_of_steps: int
     number_of_precursors: int
     number_of_precursors_in_stock: int
-    precursors_in_stock: int
-    precursors_not_in_stock: int
+    precursors_in_stock: str
+    precursors_not_in_stock: str
     precursors_availability: str
     policy_used_counts: dict
     profiling: dict
 
-    @property
-    def solved_list(self):
-        return self.is_solved.split("|")
+    # @property
+    # def solved_list(self):
+    #     return self.is_solved.split("|")
 
 
-def score(engine: Engine, scorers: list[str] | None = None):
+def score_tree(engine: Engine, scorers: list[str] | None = None):
     # scorers = scorers or self.scorers
 
     engine.build_routes()
@@ -216,26 +239,25 @@ def _change_search_configs(  # noqa: PLR0913, PLR0917
     iteration_limit: int | None = None,
     return_first: bool | None = None,
     search_scorers: dict[str, float] | None = None,
-) -> Engine:
-    e = _copy_engine(engine)
+):
     if max_transforms is not None:
-        e.config.search.max_transforms = max_transforms
+        engine.config.search.max_transforms = max_transforms
 
     if return_first is not None:
-        e.config.search.return_first = return_first
+        engine.config.search.return_first = return_first
 
     if time_limit is not None:
-        e.config.search.time_limit = time_limit * 60
+        engine.config.search.time_limit = time_limit * 60
 
     if iteration_limit is not None:
-        e.config.search.iteration_limit = iteration_limit
+        engine.config.search.iteration_limit = iteration_limit
 
     if search_scorers is not None:
-        if set(search_scorers) - set(e.scorers.names()):
+        if set(search_scorers) - set(engine.scorers.names()):
             msg = "Only exists scorers are allowed"
             raise ValueError(msg)
 
-        e.config.search.algorithm_config["search_rewards"] = list(search_scorers)
-        e.config.search.algorithm_config["search_rewards_weights"] = list(search_scorers.values())
-
-    return e
+        engine.config.search.algorithm_config["search_rewards"] = list(search_scorers)
+        engine.config.search.algorithm_config["search_rewards_weights"] = list(
+            search_scorers.values()
+        )

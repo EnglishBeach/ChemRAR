@@ -14,7 +14,8 @@ from rdkit.Chem import Draw as rd_draw  # type: ignore
 from . import retro
 
 
-def draw_routes_table(engine: retro.Engine, scores: list[dict[str, float]]):
+def draw_routes_table(engine: retro.Engine):
+    scores: list[dict[str, float]] = engine.routes.all_scores  # type: ignore
     images: list[pimage.Image] = engine.routes.make_images()  # type: ignore
     if not images:
         msg = "No routes in engine"
