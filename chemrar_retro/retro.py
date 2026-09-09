@@ -5,10 +5,11 @@ import threading
 
 from aizynthfinder import aizynthfinder as zynth_api, reactiontree as zynth_tree
 from aizynthfinder.context import stock as zynth_stock
+from PIL import Image as pimage
 from pydantic import BaseModel
 from rdkit import Chem as rd
 
-from . import _utils, config as retro_config, scorers as retro_scorers
+from . import _utils, config as retro_config
 
 _LOCK = threading.Lock()
 
@@ -137,16 +138,17 @@ class TreeType(Enum):
     AndOr = "AndOrSearchTree"
 
 
-class NodeStatistic(BaseModel):
+class RouteStatistic(BaseModel):
     score: dict[str, float]
     steps: int
     precursors: dict[str, str | None]
     solved: bool
+    image: pimage.Image
 
 
 class ScoringStatistics(BaseModel):
     tree_type: TreeType
-    routes: list[NodeStatistic]
+    routes: list[RouteStatistic]
 
     n_nodes: int
     max_transforms: int
@@ -172,6 +174,7 @@ def analyze_tree(
     )
     engine.build_routes(scorer=scorers, selection=selection)
 
+    engine.routes.make_images()
     routes = [_analyze_route(route=route, stock=engine.stock) for route in engine.routes]
 
     analysis_tree = engine.analysis
@@ -279,10 +282,8 @@ def _change_search_configs(  # noqa: PLR0913, PLR0917
         )
 
 
-def _analyze_route(route: dict, stock: zynth_stock.Stock) -> NodeStatistic:
+def _analyze_route(route: dict, stock: zynth_stock.Stock) -> RouteStatistic:
     tree: zynth_tree.ReactionTree = route["reaction_tree"]
-
-    score = route["score"]
 
     precursors: dict[str, str | None] = {}
     for mol in tree.leafs():
@@ -291,9 +292,10 @@ def _analyze_route(route: dict, stock: zynth_stock.Stock) -> NodeStatistic:
         smiles: str = mol.smiles  # type: ignore
         precursors.update({smiles: source})
 
-    return NodeStatistic(
-        score=score,
+    return RouteStatistic(
+        score=route["score"],
         precursors=precursors,
         steps=len(list(tree.reactions())),
         solved=tree.is_solved,
+        image=route["image"],
     )
