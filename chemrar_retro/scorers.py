@@ -5,7 +5,6 @@ from aizynthfinder.context.scoring import (
     DeepSetScorer,
     RouteCostScorer,
     RouteSimilarityScorer,
-    Scorer,
     Scorer as BaseScorer,
     StateScorer,
 )

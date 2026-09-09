@@ -3,9 +3,8 @@ from __future__ import annotations
 from enum import Enum
 import threading
 
-from aizynthfinder import aizynthfinder
-
-# from aizynthfinder.aizynthfinder import AiZynthFinder as Engine
+from aizynthfinder import aizynthfinder as zynth_api, reactiontree as zynth_tree
+from aizynthfinder.context import stock as zynth_stock
 from pydantic import BaseModel
 from rdkit import Chem as rd
 
@@ -14,7 +13,7 @@ from . import _utils, config as retro_config, scorers as retro_scorers
 _LOCK = threading.Lock()
 
 
-class Engine(aizynthfinder.AiZynthFinder):
+class Engine(zynth_api.AiZynthFinder):
     @property
     def search_rewards(self) -> dict[str, float]:
         rewards = self.config.search.algorithm_config["search_rewards"]
@@ -31,6 +30,7 @@ def create_engine(
     search: retro_config.Search | None = None,
     post_processing: retro_config.PostProcessing | None = None,
     filter: dict[str, retro_config.FilterPolicy] | None = None,
+    scorers: list[tuple[type, dict]] | None = None,
 ) -> Engine:
 
     init_config = _InitConfig(
@@ -40,14 +40,12 @@ def create_engine(
         filter=filter or {},
         stock=stock,
     )
-    return Engine(configdict=init_config.model_dump(mode="json"))
+    engine = Engine(configdict=init_config.model_dump(mode="json"))
 
+    for scorer_type, scorer_parameters in scorers or []:
+        engine.scorers.load(scorer_type(config=engine.config, **scorer_parameters))
 
-def add_scorers(engine: Engine, scorers: list[retro_scorers.BaseScorer]) -> Engine:
-    e = _copy_engine(engine)
-    for scorer in scorers:
-        e.scorers.load(scorer)
-    return e
+    return engine
 
 
 def select(  # noqa: PLR0913
@@ -125,6 +123,7 @@ def generate_tree(  # noqa: PLR0913
     return engine
 
 
+# TODO: copy tree
 def search_tree(engine: Engine, iterations: int):
     _change_search_configs(
         engine,
@@ -138,44 +137,61 @@ class TreeType(Enum):
     AndOr = "AndOrSearchTree"
 
 
+class NodeStatistic(BaseModel):
+    score: dict[str, float]
+    steps: int
+    precursors: dict[str, str | None]
+    solved: bool
+
+
 class ScoringStatistics(BaseModel):
     tree_type: TreeType
-    number_of_nodes: int
+    routes: list[NodeStatistic]
+
+    n_nodes: int
     max_transforms: int
     max_children: int
-    number_of_routes: int
-    number_of_solved_routes: int
-    top_score: float
-    is_solved: bool
+    n_solved: int
 
-    number_of_steps: int
-    number_of_precursors: int
-    number_of_precursors_in_stock: int
-    precursors_in_stock: str
-    precursors_not_in_stock: str
-    precursors_availability: str
+    steps: int
     policy_used_counts: dict
-    profiling: dict
-
-    # @property
-    # def solved_list(self):
-    #     return self.is_solved.split("|")
 
 
-def score_tree(engine: Engine, scorers: list[str] | None = None):
+def analyze_tree(
+    engine: Engine,
+    *,
+    scorers: list[str] | None = None,
+    top_n: int = 0,
+):
     # scorers = scorers or self.scorers
+    top_n = top_n or 100
+    selection = zynth_api.RouteSelectionArguments(
+        return_all=not bool(top_n),
+        nmin=top_n,
+        nmax=top_n,
+    )
+    engine.build_routes(scorer=scorers, selection=selection)
 
-    engine.build_routes()
-    routes = engine.routes
+    routes = [_analyze_route(route=route, stock=engine.stock) for route in engine.routes]
+
     analysis_tree = engine.analysis
-
     tree_type = (
         TreeType.MCTS
-        if isinstance(analysis_tree.search_tree, aizynthfinder.MctsSearchTree)  # type: ignore
+        if isinstance(analysis_tree.search_tree, zynth_api.MctsSearchTree)  # type: ignore
         else TreeType.AndOr
     )
+    statistica = analysis_tree.tree_statistics()  # type: ignore
 
-    return ScoringStatistics(tree_type=tree_type, **analysis_tree.tree_statistics())  # type: ignore
+    return ScoringStatistics(
+        tree_type=tree_type,
+        n_nodes=statistica["number_of_nodes"],
+        max_transforms=statistica["max_transforms"],
+        max_children=statistica["max_children"],
+        n_solved=statistica["number_of_solved_routes"],
+        policy_used_counts=statistica["policy_used_counts"],
+        steps=statistica["number_of_steps"],
+        routes=routes,
+    )
 
 
 class _InitConfig(BaseModel):
@@ -261,3 +277,23 @@ def _change_search_configs(  # noqa: PLR0913, PLR0917
         engine.config.search.algorithm_config["search_rewards_weights"] = list(
             search_scorers.values()
         )
+
+
+def _analyze_route(route: dict, stock: zynth_stock.Stock) -> NodeStatistic:
+    tree: zynth_tree.ReactionTree = route["reaction_tree"]
+
+    score = route["score"]
+
+    precursors: dict[str, str | None] = {}
+    for mol in tree.leafs():
+        source = stock.availability_string(mol)
+        source = None if source == "Not in stock" else source
+        smiles: str = mol.smiles  # type: ignore
+        precursors.update({smiles: source})
+
+    return NodeStatistic(
+        score=score,
+        precursors=precursors,
+        steps=len(list(tree.reactions())),
+        solved=tree.is_solved,
+    )
