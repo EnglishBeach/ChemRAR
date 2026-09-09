@@ -60,7 +60,6 @@ def draw_molecule_tree(
 
     for node, node_id in ids.items():
         mols = [i.rd_mol for i in node._state.mols]  # noqa: SLF001
-        n = max(len(mols), 1)
 
         img = rd_draw.MolsToGridImage(mols, molsPerRow=2, subImgSize=sub_img_size, returnPNG=False)
         img = _trim_whitespace(img)

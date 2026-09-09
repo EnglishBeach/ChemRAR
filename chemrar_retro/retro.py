@@ -26,6 +26,7 @@ class Engine(zynth_api.AiZynthFinder):
 
 
 def create_engine(
+    *,
     stock: dict[str, retro_config.Stock],
     expansion: dict[str, retro_config.ExpansionPolicy],
     search: retro_config.Search | None = None,
@@ -49,7 +50,7 @@ def create_engine(
     return engine
 
 
-def select(  # noqa: PLR0913
+def select(
     engine: Engine,
     *,
     stocks: list[str] | None = None,
@@ -87,7 +88,7 @@ def select(  # noqa: PLR0913
     return e
 
 
-def generate_tree(  # noqa: PLR0913
+def generate_tree(
     engine: Engine,
     smiles: str,
     *,
@@ -251,8 +252,9 @@ def _copy_engine(engine: Engine) -> Engine:
         return new
 
 
-def _change_search_configs(  # noqa: PLR0913, PLR0917
+def _change_search_configs(
     engine: Engine,
+    *,
     max_transforms: int | None = None,
     time_limit: int | None = None,
     iteration_limit: int | None = None,
