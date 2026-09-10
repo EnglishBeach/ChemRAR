@@ -139,7 +139,7 @@ class TreeType(Enum):
     AndOr = "AndOrSearchTree"
 
 
-class RouteStatistic(BaseModel):
+class RouteStatistic(BaseModel, arbitrary_types_allowed=True):
     score: dict[str, float]
     steps: int
     precursors: dict[str, str | None]

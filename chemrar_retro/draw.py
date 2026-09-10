@@ -23,24 +23,23 @@ def draw_routes_table(routes: list[retro.RouteStatistic]):
     titles = []
     for i, score_data in enumerate(scores):
         title = "\n".join(f"{score_data[key]:>4.1%}" for key in score_keys)
-        titles.append(f"Rate: {i}\n{title}")
+        titles.append(f"{i})\n{title}")
 
     cell_dx, cell_dy = (max(i.width for i in images), max(i.height for i in images))
     processed_images = [
         _add_border(
-            _add_title(
+            _add_title2(
                 _pad_to_size(
                     image,
                     size=(cell_dx, cell_dy),
                 ),
                 title,
                 font_size=50,
-                text_color=(0, 0, 0),
-                overlay_color=(0, 0, 0, 0),
             ),
         )
         for image, title in zip(images, titles, strict=True)
     ]
+    title = "\n".join(titles)
     return _combine_images_to_grid(processed_images, cols=2)
 
 
@@ -66,22 +65,7 @@ def draw_molecule_tree(
 
         img_path = tmp_dir / f"{node_id}.png"
         img.save(img_path)
-
-        # w_in = img.width / 300
-        # h_in = img.height / 300
-
-        dot.add_node(
-            pydot.Node(
-                node_id,
-                shape="box",
-                label="",
-                image=img_path,
-                # imagescale="true",
-                # width=str(w_in),
-                # height=str(h_in),
-                # fixedsize="true",
-            )
-        )
+        dot.add_node(pydot.Node(node_id, shape="box", label="", image=img_path))
 
     for u, v in g.edges:
         dot.add_edge(pydot.Edge(ids[u], ids[v]))
@@ -106,26 +90,30 @@ def _add_border(
     return pops.expand(img, border=width, fill=color)
 
 
-def _add_title(
+def _add_title2(
     img: pimage.Image,
     title: str,
     *,
+    center: bool = False,
     font_size: int = 16,
-    text_color: tuple[int, int, int] = (255, 255, 255),
-    overlay_color: tuple[int, int, int, int] = (0, 0, 0, 120),
 ) -> pimage.Image:
-    img = img.convert("RGBA")
-    overlay = pimage.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = pdraw.Draw(overlay)
-    font = pfont.load_default(size=font_size)
-    bar_h = font_size + 12
-    draw.rectangle([0, 0, img.width, bar_h], fill=overlay_color)
-    # bbox = draw.textbbox((0, 0), title, font=font)
-    # text_w = bbox[2] - bbox[0]
-    # text_x = (img.width - text_w) // 2
+    text_color = (0, 0, 0)
     text_x = 10
+    font = pfont.load_default(size=font_size)
+    bar_height = font_size + 12
+    overlay_color = (0, 0, 0, 0)
+
+    img = img.convert("RGBA")
+    # if center:
+    #     space = pimage.new("RGB", (img.width, img.height + bar_height), overlay_color)
+    #     space.paste(img, (0, bar_height))
+
+    # else:
+    space = pimage.new("RGBA", img.size, overlay_color)
+    draw = pdraw.Draw(space)
+
     draw.text((text_x, 6), title, fill=text_color, font=font)
-    return pimage.alpha_composite(img, overlay).convert("RGB")
+    return pimage.alpha_composite(img, space).convert("RGB")
 
 
 def _combine_images_to_grid(
