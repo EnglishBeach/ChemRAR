@@ -57,7 +57,7 @@ def select(
     expansion_policies: list[str] | None = None,
     filter_policies: list[str] | None = None,
     scorers: list[str] | None = None,
-    search_scorers: dict[str, float] | None = None,
+    search_scorers: dict[str, float | None] | None = None,
 ) -> Engine:
     e = _copy_engine(engine)
 
@@ -78,10 +78,14 @@ def select(
         if set(search_scorers) - set(e.scorers.names()):
             msg = "Only exists scorers are allowed"
             raise ValueError(msg)
-        if len(search_scorers):
+        if (len(search_scorers) == 1) or all(i is None for i in search_scorers.values()):
             weights = []
-        else:
+        elif all(i is not None for i in search_scorers.values()):
             weights = list(search_scorers.values())
+        else:
+            msg = "Only this search scorers allowed: {}, {scorer:None} {scorer:<float>}"
+            raise ValueError(msg)
+
         e.config.search.algorithm_config["search_rewards"] = list(search_scorers)
         e.config.search.algorithm_config["search_rewards_weights"] = weights
 
