@@ -1,15 +1,8 @@
 [project]
-name = "chemrar_task"
+name = "chemrar_retro"
 version = "0.0.1"
 requires-python = ">=3.12,<3.13"
-dependencies = [
-    "aizynthfinder[all] (>=4.4.1,<5.0.0)",
-    "frozendict (>=2.4.7,<3.0.0)",
-]
-
-
-[tool.poetry]
-package-mode = false
+dependencies = ["aizynthfinder (>=4.4.1,<5.0.0)", "frozendict (>=2.4.7,<3.0.0)"]
 
 
 [tool.ruff]
@@ -105,14 +98,6 @@ convention = "google"
 "**/__init__.py" = [
     "F401", # unused imports
 ]
-"tests_md/**" = [
-    'N805',   # method name starts with UP case letter
-    'N802',   # function name starts with UP case letter
-    "F403",   # import *
-    "D103",   # docsting in tests
-    "ANN001", # mixture annotations
-    "F401",   # unused imports
-]
 
 [tool.ruff.lint.flake8-type-checking]
 strict = true
@@ -125,8 +110,9 @@ suppress-none-returning = true
 mypy-init-return = true
 allow-star-arg-any = true
 ignore-fully-untyped = true
+
 [tool.ruff.lint.isort]
-known-first-party = ["simdel"]
+known-first-party = ["chemrar_retro"]
 combine-as-imports = true
 force-sort-within-sections = true
 
@@ -137,6 +123,6 @@ docstring-code-format = true
 skip-magic-trailing-comma = false
 
 [tool.pyright]
-include = ["src"]
+include = ["chemrar_retro"]
 exclude = ["*/__init__.py", "**/__pycache__", "**/node_modules", ".*", ".venv"]
 typeCheckingMode = "standard"
