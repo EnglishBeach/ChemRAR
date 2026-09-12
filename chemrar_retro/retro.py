@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from pathlib import Path
 import threading
 
 from aizynthfinder import aizynthfinder as zynth_api, reactiontree as zynth_tree
@@ -12,6 +13,26 @@ from rdkit import Chem as rd
 from . import _utils, config as retro_config
 
 _LOCK = threading.Lock()
+
+
+def mols_from_sdf(sdf_path: Path) -> list[rd.Mol]:
+    """Extract RDKit molecules list from sdf file.
+
+    :param sdf_path: Path to sdf file with molecules
+    :return: List of RDKit molecules
+    """
+    sdf_system = rd.ForwardSDMolSupplier(
+        sdf_path.as_posix(),
+        # sanitize=True,
+        removeHs=False,
+    )
+
+    molecules = []
+    for sdf_mol in sdf_system:
+        molecule = rd.Mol(sdf_mol)
+        molecule.SetProp("source", sdf_path.as_posix())
+        molecules.append(molecule)
+    return molecules
 
 
 class Engine(zynth_api.AiZynthFinder):
