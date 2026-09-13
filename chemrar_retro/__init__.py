@@ -1,1 +1,1 @@
-from . import config, draw, retro, scorers
+from . import config, draw, retro, scores

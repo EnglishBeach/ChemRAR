@@ -1,8 +1,13 @@
-# ruff: disable[F401]
+from aizynthfinder.context import scoring as _scoring
 
-from aizynthfinder.context.scoring import (
-    RouteCostScorer as RouteCost,
-)
-from aizynthfinder.context.scoring.scorers_mols import (
-    PriceSumScorer as PrecursorsCost,
-)
+from chemrar_retro import config as _config
+
+
+class RouteCost(_config.Score):
+    scorer_type = _scoring.RouteCostScorer
+    up_order = False
+
+
+class PrecursorsCost(_config.Score):
+    scorer_type = _scoring.PriceSumScorer
+    up_order = False

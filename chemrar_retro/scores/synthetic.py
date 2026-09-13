@@ -1,73 +1,40 @@
-# ruff: disable[F401]
-import typing
-
-from aizynthfinder.context import config as aizynth_config, scoring as aizynth_scoring
-from aizynthfinder.context.scoring import scorers_mols as aizynth_scorers_mols
-from aizynthfinder.context.scoring.scorers_mols import (
-    DeltaSyntheticComplexityScorer as SCScore,
-    # NumberOfPrecursorsScorer as NPrecursors,
-)
-from aizynthfinder.utils import type_utils as aizynth_types
+from aizynthfinder.context import scoring as _scoring
 import BRSAScore as br_sascore
 import numpy as np
 
-from . import _utils
+from chemrar_retro import _utils, config as _config
 
 
-class NPrecursors(aizynth_scorers_mols.NumberOfPrecursorsScorer):
-    def __init__(
-        self,
-        config: aizynth_config.Configuration | None = None,
-        scaler_params: dict[str, typing.Any] | None = None,
-    ) -> None:
-        if scaler_params:
-            # TODO: log
-            print("User's scaler_params skipped")  # noqa: T201
-
-        scaler_params_ = _utils.ScalerParams(
-            type=_utils.ScalerType.MinMax,
-            min_val=1,
-            max_val=10,
-            reverse=False,
-        )
-        super().__init__(config, scaler_params_.model_dump())
-
-
-class BRSAScore(aizynth_scoring.Scorer):
+class _BRSAScore(_config.BaseScorer):
     scorer_name = "target br-sascore"
 
     def __init__(
         self,
-        config: aizynth_config.Configuration,
+        config: _utils.Configuration,
     ) -> None:
-        scaler_params = _utils.ScalerParams(
-            type=_utils.ScalerType.MinMax,
-            min_val=1,
-            max_val=10,
-            reverse=False,
-        )
-        super().__init__(config, scaler_params.model_dump())
+        super().__init__(config)
         self._model = br_sascore.SAScorer()
         self._cache: dict[str, float] = {}
         self._max_cache_len = 1000
-        self._none_val = scaler_params.max_val
+        self._min_val = 1
+        self._max_val = 10
 
     def __repr__(self) -> str:
         return self.scorer_name
 
-    def _score_node(self, node: aizynth_scorers_mols.MctsNode) -> float:
+    def _score_node(self, node: _utils.MctsNode) -> float:
         mean_score = np.mean(
             [
-                self._calculate_score(i.smiles) if i.smiles else self._none_val
+                self._calculate_score(i.smiles) if i.smiles else self._min_val
                 for i in node.state.mols
             ]
         )
         return float(mean_score)
 
-    def _score_reaction_tree(self, tree: aizynth_scorers_mols.ReactionTree) -> float:
+    def _score_reaction_tree(self, tree: _utils.ReactionTree) -> float:
         leaves = list(tree.leafs())
         mean_score = np.mean(
-            [self._calculate_score(i.smiles) if i.smiles else self._none_val for i in leaves]
+            [self._calculate_score(i.smiles) if i.smiles else self._min_val for i in leaves]
         )
         return float(mean_score)
 
@@ -76,7 +43,7 @@ class BRSAScore(aizynth_scoring.Scorer):
 
         if cached is None:
             sascore, _ = self._model.calculateScore(smiles)
-
+            sascore = (sascore - 1) / (self._max_val - 1)
             if len(self._cache) > self._max_cache_len:
                 self._cache.popitem()
 
@@ -84,3 +51,16 @@ class BRSAScore(aizynth_scoring.Scorer):
             return sascore
 
         return self._cache[smiles]
+
+
+class SCScore(_config.Score):
+    scorer_type = _scoring.DeltaSyntheticComplexityScorer
+
+
+class NPrecursors(_config.Score):
+    scorer_type = _scoring.NumberOfPrecursorsScorer
+    up_order = False
+
+
+class BRSAScore(_config.Score):
+    scorer_type = _BRSAScore

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
+import warnings
 
 from aizynthfinder.context.scoring import Scorer as BaseScorer
 from pydantic import BaseModel
@@ -93,19 +94,42 @@ class PostProcessing(BaseModel):
     scorer_weights: list[float] | None = None
 
 
-class ScalerType(Enum):
-    Squash = "squash"
-    MinMax = "min_max"
-    Power = "power"
-
-
 class Scaler(BaseModel):
     """Scaler parameters, need to normalize scores."""
 
-    type: ScalerType = ScalerType.MinMax
-    min_val: int = 0
-    max_val: int = 1
-    reverse: bool = False
+    @property
+    def up(self) -> bool: ...
+
+
+# TODO: x=0.5 can be from 1 to 0 and clip set x=0
+class MinMaxScaler(Scaler):
+    min_val: float
+    max_val: float
+    reverse: bool
+    scale_factor: float
+
+    @property
+    def up(self) -> bool:
+        mark = (0.5 - int(self.reverse)) * self.scale_factor
+        return mark < 0
+
+
+class SquashScaler(Scaler):
+    slope: float
+    xoffset: float
+    yoffset: float
+
+    @property
+    def up(self) -> bool:
+        return self.slope > 0
+
+
+class PowerScaler(Scaler):
+    base_coefficient: float
+
+    @property
+    def up(self) -> bool:
+        return True
 
 
 class Score:
@@ -113,16 +137,21 @@ class Score:
 
     Range (in bracets - after rescaling if scaler is on):
     - min value (0) - hard, bad
-    - max value (1)- easy, good
+    - max value (1) - easy, good
 
-    This is straight order for aizynthfinder,
-    all internal scorers have _reverse order parameter inside
+    This is up order for aizynthfinder,
+    all internal scorers have _reverse order parameter inside if min-good, max-bad
     """
 
-    _scorer_type: type
-    """Only BaseScorer types"""
+    scorer_type: type
+    """Only BaseScorer types.
 
-    straight_order: bool = True
+    Methods ._score_node and ._score_reaction_tree must score in up order:
+    min - bad, max - good
+    """
+
+    up_order: bool = True
+    """Mark up order (min - bad, max - good) or not"""
 
     def __init__(
         self,
@@ -130,16 +159,19 @@ class Score:
         scaler: Scaler | None = None,
         **kwargs: dict,
     ) -> None:
-        if not issubclass(self._scorer_type, BaseScorer):
+        if not issubclass(self.scorer_type, BaseScorer):
             msg = f"{self.__class__.__name__}._scorer_type must be is subclass of BaseScorer"
             raise TypeError(msg)
 
-        # TODO: scale
+        if (not self.up_order) and (not scaler or scaler.up):
+            msg = "Score reversed - use scaler with up=False"
+            warnings.warn(msg, stacklevel=2)
+
         self.scaler = scaler
         self.kwargs = kwargs
 
     def create_scorer(self, config: _utils.Configuration) -> BaseScorer:
-        return self._scorer_type(
+        return self.scorer_type(
             config=config,
             scaler_params=self.scaler.model_dump() if self.scaler else None,
             **self.kwargs,

@@ -3,6 +3,7 @@ import copy
 import typing
 
 from aizynthfinder.context.config import Configuration  # noqa: F401
+from aizynthfinder.context.scoring.scorers_mols import MctsNode, ReactionTree  # noqa: F401
 from aizynthfinder.utils.type_utils import StrDict  # noqa: F401
 
 T = typing.TypeVar("T")
