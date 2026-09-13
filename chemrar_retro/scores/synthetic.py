@@ -2,7 +2,7 @@ from aizynthfinder.context import scoring as _scoring
 import BRSAScore as br_sascore
 import numpy as np
 
-from chemrar_retro import _utils, config as _config
+from chemrar_retro import _utils, parameters as _config
 
 
 class _BRSAScore(_config.BaseScorer):

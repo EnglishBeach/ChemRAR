@@ -1,6 +1,6 @@
 from aizynthfinder.context import scoring as _scoring
 
-from chemrar_retro import _utils, config as _config
+from chemrar_retro import _utils, parameters as _config
 
 
 class _MissingPrecursorsScorer(_config.BaseScorer):

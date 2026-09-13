@@ -4,7 +4,9 @@ from enum import Enum
 from pathlib import Path
 import warnings
 
+from aizynthfinder.context.config import Configuration  # noqa: F401
 from aizynthfinder.context.scoring import Scorer as BaseScorer
+from aizynthfinder.context.scoring.scorers_mols import MctsNode, ReactionTree  # noqa: F401
 from pydantic import BaseModel
 
 from chemrar_retro import _utils

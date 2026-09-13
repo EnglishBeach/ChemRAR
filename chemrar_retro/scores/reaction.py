@@ -1,6 +1,6 @@
 from aizynthfinder.context import scoring as _scoring
 
-from chemrar_retro import config as _config
+from chemrar_retro import parameters as _config
 
 
 class Similarity(_config.Score):

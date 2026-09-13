@@ -7,7 +7,7 @@ from aizynthfinder import aizynthfinder as aizynth_api
 from pydantic import BaseModel
 from rdkit import Chem as rd
 
-from . import _utils, config as _config
+from . import _utils, parameters as _config
 
 _LOCK = threading.Lock()
 
