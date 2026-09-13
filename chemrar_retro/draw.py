@@ -11,10 +11,10 @@ from PIL import (
 )
 from rdkit.Chem import Draw as rd_draw  # type: ignore
 
-from . import retro
+from . import analyze
 
 
-def draw_routes_table(routes: list[retro.RouteStatistic]):
+def draw_routes_table(routes: list[analyze.RouteInfo]):
     scores: list[dict[str, float]] = [i.score for i in routes]
     images: list[pimage.Image] = [i.image for i in routes]
 

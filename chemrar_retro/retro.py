@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import collections.abc as collections
+import copy
 from enum import Enum
 from pathlib import Path
 import threading
+import typing
 
-from aizynthfinder import aizynthfinder as zynth_api, reactiontree as zynth_tree
-from aizynthfinder.context import stock as zynth_stock
-from PIL import Image as pimage
+from aizynthfinder import aizynthfinder as aizynth_api
+from aizynthfinder.context import scoring as aizynth_scoring
 from pydantic import BaseModel
 from rdkit import Chem as rd
 
-from . import _utils, config as retro_config
+from . import config as retro_config
 
 _LOCK = threading.Lock()
+T = typing.TypeVar("T")
 
 
 def mols_from_sdf(sdf_path: Path) -> list[rd.Mol]:
@@ -35,7 +38,7 @@ def mols_from_sdf(sdf_path: Path) -> list[rd.Mol]:
     return molecules
 
 
-class Engine(zynth_api.AiZynthFinder):
+class Engine(aizynth_api.AiZynthFinder):
     @property
     def search_rewards(self) -> dict[str, float]:
         rewards = self.config.search.algorithm_config["search_rewards"]
@@ -44,6 +47,47 @@ class Engine(zynth_api.AiZynthFinder):
         else:
             weights = self.config.search.algorithm_config["search_rewards_weights"]
         return dict(zip(rewards, weights, strict=True))
+
+
+class ScalerType(Enum):
+    Squash = "squash"
+    MinMax = "min_max"
+    Power = "power"
+
+
+class Scaler(BaseModel):
+    """Scaler parameters, need to normalize scores.
+
+    Range:
+    - 0 - easy, good
+    - 1 - hard, bad
+    """
+
+    type: ScalerType
+    min_val: int
+    max_val: int
+    reverse: bool
+
+
+class Scorer:
+    _scorer_type: type
+    """Only Scorer types"""
+
+    def __init__(
+        self,
+        *,
+        scaler: Scaler,
+        **kwargs: dict,
+    ) -> None:
+        self.scaler = scaler
+        self.kwargs = kwargs
+
+    def create_scorer(self, config: aizynth_api.Configuration) -> aizynth_scoring.Scorer:
+        return self._scorer_type(
+            config=config,
+            scaler_params=self.scaler.model_dump(),
+            **self.kwargs,
+        )
 
 
 def create_engine(
@@ -150,77 +194,12 @@ def generate_tree(
     return engine
 
 
-# TODO: copy tree
 def search_tree(engine: Engine, iterations: int):
     _change_search_configs(
         engine,
         iteration_limit=engine.config.search.iteration_limit + iterations,
     )
     engine.tree_search(show_progress=False)
-
-
-class TreeType(Enum):
-    MCTS = "MctsSearchTree"
-    AndOr = "AndOrSearchTree"
-
-
-class RouteStatistic(BaseModel, arbitrary_types_allowed=True):
-    score: dict[str, float]
-    steps: int
-    precursors: dict[str, str | None]
-    solved: bool
-    image: pimage.Image
-
-
-class ScoringStatistics(BaseModel):
-    tree_type: TreeType
-    routes: list[RouteStatistic]
-
-    n_nodes: int
-    max_transforms: int
-    max_children: int
-    n_solved: int
-
-    steps: int
-    policy_used_counts: dict
-
-
-def analyze_tree(
-    engine: Engine,
-    *,
-    scorers: list[str] | None = None,
-    top_n: int = 0,
-):
-    # scorers = scorers or self.scorers
-    top_n = top_n or 100
-    selection = zynth_api.RouteSelectionArguments(
-        return_all=not bool(top_n),
-        nmin=top_n,
-        nmax=top_n,
-    )
-    engine.build_routes(scorer=scorers, selection=selection)
-
-    engine.routes.make_images()
-    routes = [_analyze_route(route=route, stock=engine.stock) for route in engine.routes]
-
-    analysis_tree = engine.analysis
-    tree_type = (
-        TreeType.MCTS
-        if isinstance(analysis_tree.search_tree, zynth_api.MctsSearchTree)  # type: ignore
-        else TreeType.AndOr
-    )
-    statistica = analysis_tree.tree_statistics()  # type: ignore
-
-    return ScoringStatistics(
-        tree_type=tree_type,
-        n_nodes=statistica["number_of_nodes"],
-        max_transforms=statistica["max_transforms"],
-        max_children=statistica["max_children"],
-        n_solved=statistica["number_of_solved_routes"],
-        policy_used_counts=statistica["policy_used_counts"],
-        steps=statistica["number_of_steps"],
-        routes=routes,
-    )
 
 
 class _InitConfig(BaseModel):
@@ -233,48 +212,57 @@ class _InitConfig(BaseModel):
 
 def _copy_engine(engine: Engine) -> Engine:
     with _LOCK:
-        new = _utils.copy_dataclass(engine)
-        new.config = _utils.copy_dataclass(new.config)
+        new = _copy_dataclass(engine)
+        new.config = _copy_dataclass(new.config)
 
         # Mutate search.algorithm_config.search_rewards in: search
-        new.config.search = _utils.copy_dataclass(new.config.search)
-        new.config.search.algorithm_config = _utils.copy_dataclass(
-            new.config.search.algorithm_config
-        )
+        new.config.search = _copy_dataclass(new.config.search)
+        new.config.search.algorithm_config = _copy_dataclass(new.config.search.algorithm_config)
 
         # Mutate _items in: cached_search[stock.__contains__(mol)/.stock._apply_stop_criteria]
-        stock = _utils.copy_dataclass(new.stock)
+        stock = _copy_dataclass(new.stock)
         if stock._use_stop_criteria:  # noqa: SLF001
-            stock._items = {k: _utils.copy_dataclass(v) for k, v in stock._items.items()}  # noqa: SLF001
+            stock._items = {k: _copy_dataclass(v) for k, v in stock._items.items()}  # noqa: SLF001
         new.stock = stock
         new.config.stock = stock
 
         # Mutate _items in: reset_cache[prepare_tree/.filter_policy.reset_cache]
-        filter_policy = _utils.copy_dataclass(new.filter_policy)
+        filter_policy = _copy_dataclass(new.filter_policy)
         filter_policy._items = {  # noqa: SLF001
-            k: _utils.copy_dataclass(v)
+            k: _copy_dataclass(v)
             for k, v in filter_policy._items.items()  # noqa: SLF001
         }
         new.filter_policy = filter_policy
         new.config.filter_policy = filter_policy
 
         # Mutate _items in: reset_cache[prepare_tree/.expansion_policy.reset_cache]
-        expansion_policy = _utils.copy_dataclass(new.expansion_policy)
+        expansion_policy = _copy_dataclass(new.expansion_policy)
         expansion_policy._items = {  # noqa: SLF001
-            k: _utils.copy_dataclass(v)
+            k: _copy_dataclass(v)
             for k, v in expansion_policy._items.items()  # noqa: SLF001
         }
         new.expansion_policy = expansion_policy
         new.config.expansion_policy = expansion_policy
 
         # Mutate _items in: search
-        scorers = _utils.copy_dataclass(new.scorers)
-        scorers._items = {k: _utils.copy_dataclass(v) for k, v in scorers._items.items()}  # noqa: SLF001
+        scorers = _copy_dataclass(new.scorers)
+        scorers._items = {k: _copy_dataclass(v) for k, v in scorers._items.items()}  # noqa: SLF001
         new.scorers = scorers
         new.config.scorers = scorers
 
         # TODO: copy logger
         return new
+
+
+def _copy_dataclass(obj: T) -> T:
+    new_obj = copy.copy(obj)
+
+    if hasattr(new_obj, "__dict__"):
+        for attr, value in list(new_obj.__dict__.items()):
+            if isinstance(value, collections.Collection):
+                new_obj.__dict__[attr] = copy.copy(value)
+
+    return new_obj
 
 
 def _change_search_configs(
@@ -307,22 +295,3 @@ def _change_search_configs(
         engine.config.search.algorithm_config["search_rewards_weights"] = list(
             search_scorers.values()
         )
-
-
-def _analyze_route(route: dict, stock: zynth_stock.Stock) -> RouteStatistic:
-    tree: zynth_tree.ReactionTree = route["reaction_tree"]
-
-    precursors: dict[str, str | None] = {}
-    for mol in tree.leafs():
-        source = stock.availability_string(mol)
-        source = None if source == "Not in stock" else source
-        smiles: str = mol.smiles  # type: ignore
-        precursors.update({smiles: source})
-
-    return RouteStatistic(
-        score=route["score"],
-        precursors=precursors,
-        steps=len(list(tree.reactions())),
-        solved=tree.is_solved,
-        image=route["image"],
-    )
