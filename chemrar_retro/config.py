@@ -171,8 +171,10 @@ class Score:
         self.kwargs = kwargs
 
     def create_scorer(self, config: _utils.Configuration) -> BaseScorer:
-        return self.scorer_type(
+        scorer: BaseScorer = self.scorer_type(
             config=config,
             scaler_params=self.scaler.model_dump() if self.scaler else None,
             **self.kwargs,
         )
+        scorer._reverse_order = True  # noqa: SLF001
+        return scorer

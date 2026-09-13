@@ -34,7 +34,7 @@ def draw_routes_table(routes: list[analyze.RouteInfo]):
                     size=(cell_dx, cell_dy),
                 ),
                 title,
-                font_size=50,
+                font_size=32,
             ),
         )
         for image, title in zip(images, titles, strict=True)
@@ -120,9 +120,10 @@ def _combine_images_to_grid(
     images: list[pimage.Image],
     *,
     cols: int | None = None,
-    padding: int = 10,
-    bg_color: tuple[int, int, int] = (255, 255, 255),
 ) -> pimage.Image:
+    padding: int = 10
+    bg_color: tuple[int, int, int] = (255, 255, 255)
+
     n = len(images)
     cols = cols or math.ceil(math.sqrt(n))
     rows = math.ceil(n / cols)
