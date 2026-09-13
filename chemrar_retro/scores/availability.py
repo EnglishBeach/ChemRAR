@@ -1,9 +1,9 @@
 from aizynthfinder.context.scoring import scorers_mols
 
-from chemrar_retro import _utils, config as r_config
+from chemrar_retro import _utils, config as _config
 
 
-class _MissingPrecursorsScorer(r_config.BaseScorer):
+class _MissingPrecursorsScorer(_config.BaseScorer):
     scorer_name = "missing precursors"
 
     def __init__(
@@ -31,29 +31,29 @@ class _MissingPrecursorsScorer(r_config.BaseScorer):
         return n_precursors - stock_precursor
 
 
-class Fraction(r_config.Score):
+class Fraction(_config.Score):
     _scorer_type: type = scorers_mols.FractionInStockScorer
 
 
-class IntermediatesFraction(r_config.Score):
+class IntermediatesFraction(_config.Score):
     _scorer_type: type = scorers_mols.FractionOfIntermediatesInStockScorer
 
 
-class FractionSource(r_config.Score):
+class FractionSource(_config.Score):
     _scorer_type: type = scorers_mols.FractionInSourceStockScorer
 
 
-class NPrecursors(r_config.Score):
+class NPrecursors(_config.Score):
     _scorer_type: type = scorers_mols.NumberOfPrecursorsScorer
 
 
-class NStockPrecursors(r_config.Score):
+class NStockPrecursors(_config.Score):
     _scorer_type: type = scorers_mols.NumberOfPrecursorsInStockScorer
 
 
-class NSourcePrecursors(r_config.Score):
+class NSourcePrecursors(_config.Score):
     _scorer_type: type = scorers_mols.StockAvailabilityScorer
 
 
-class MissingPrecursors(r_config.Score):
+class MissingPrecursors(_config.Score):
     _scorer_type: type = _MissingPrecursorsScorer

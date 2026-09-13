@@ -3,9 +3,10 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 
-from aizynthfinder import aizynthfinder as aizynth_api
 from aizynthfinder.context.scoring import Scorer as BaseScorer
 from pydantic import BaseModel
+
+from chemrar_retro import _utils
 
 
 # Search
@@ -118,7 +119,6 @@ class Score:
     all internal scorers have _reverse order parameter inside
     """
 
-    # TODO: validate
     _scorer_type: type
     """Only BaseScorer types"""
 
@@ -130,11 +130,15 @@ class Score:
         scaler: Scaler | None = None,
         **kwargs: dict,
     ) -> None:
+        if not issubclass(self._scorer_type, BaseScorer):
+            msg = f"{self.__class__.__name__}._scorer_type must be is subclass of BaseScorer"
+            raise TypeError(msg)
+
         # TODO: scale
         self.scaler = scaler
         self.kwargs = kwargs
 
-    def create_scorer(self, config: aizynth_api.Configuration) -> BaseScorer:
+    def create_scorer(self, config: _utils.Configuration) -> BaseScorer:
         return self._scorer_type(
             config=config,
             scaler_params=self.scaler.model_dump() if self.scaler else None,

@@ -2,8 +2,8 @@ import collections.abc as collections
 import copy
 import typing
 
-from aizynthfinder.context.config import Configuration
-from aizynthfinder.utils.type_utils import StrDict
+from aizynthfinder.context.config import Configuration  # noqa: F401
+from aizynthfinder.utils.type_utils import StrDict  # noqa: F401
 
 T = typing.TypeVar("T")
 
