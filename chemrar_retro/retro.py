@@ -1,21 +1,15 @@
 from __future__ import annotations
 
-import collections.abc as collections
-import copy
-from enum import Enum
 from pathlib import Path
 import threading
-import typing
 
 from aizynthfinder import aizynthfinder as aizynth_api
-from aizynthfinder.context import scoring as aizynth_scoring
 from pydantic import BaseModel
 from rdkit import Chem as rd
 
-from . import config as retro_config
+from . import _utils, config as _config
 
 _LOCK = threading.Lock()
-T = typing.TypeVar("T")
 
 
 def mols_from_sdf(sdf_path: Path) -> list[rd.Mol]:
@@ -49,68 +43,33 @@ class Engine(aizynth_api.AiZynthFinder):
         return dict(zip(rewards, weights, strict=True))
 
 
-class ScalerType(Enum):
-    Squash = "squash"
-    MinMax = "min_max"
-    Power = "power"
-
-
-class Scaler(BaseModel):
-    """Scaler parameters, need to normalize scores.
-
-    Range:
-    - 0 - easy, good
-    - 1 - hard, bad
-    """
-
-    type: ScalerType
-    min_val: int
-    max_val: int
-    reverse: bool
-
-
-class Scorer:
-    _scorer_type: type
-    """Only Scorer types"""
-
-    def __init__(
-        self,
-        *,
-        scaler: Scaler,
-        **kwargs: dict,
-    ) -> None:
-        self.scaler = scaler
-        self.kwargs = kwargs
-
-    def create_scorer(self, config: aizynth_api.Configuration) -> aizynth_scoring.Scorer:
-        return self._scorer_type(
-            config=config,
-            scaler_params=self.scaler.model_dump(),
-            **self.kwargs,
-        )
-
-
 def create_engine(
     *,
-    stock: dict[str, retro_config.Stock],
-    expansion: dict[str, retro_config.ExpansionPolicy],
-    search: retro_config.Search | None = None,
-    post_processing: retro_config.PostProcessing | None = None,
-    filter: dict[str, retro_config.FilterPolicy] | None = None,
-    scorers: list[tuple[type, dict]] | None = None,
+    stock: dict[str, _config.Stock],
+    expansion_policies: dict[str, _config.ExpansionPolicy],
+    search: _config.Search | None = None,
+    post_processing: _config.PostProcessing | None = None,
+    filters: dict[str, _config.FilterPolicy] | None = None,
+    scores: list[_config.Score] | None = None,
 ) -> Engine:
 
     init_config = _InitConfig(
-        search=search or retro_config.Search(),
-        post_processing=post_processing or retro_config.PostProcessing(),
-        expansion=expansion,
-        filter=filter or {},
+        search=search or _config.Search(),
+        post_processing=post_processing or _config.PostProcessing(),
+        expansion=expansion_policies,
+        filter=filters or {},
         stock=stock,
     )
     engine = Engine(configdict=init_config.model_dump(mode="json"))
 
-    for scorer_type, scorer_parameters in scorers or []:
-        engine.scorers.load(scorer_type(config=engine.config, **scorer_parameters))
+    scores = scores or []
+    scorers = [i.create_scorer(config=engine.config) for i in scores]
+    names = [repr(i) for i in scorers]
+    if len(names) != len(set(names)):
+        msg = f"Some scorers have same names:\n {names}"
+        raise ValueError(msg)
+    for scorer in scorers:
+        engine.scorers.load(scorer)
 
     return engine
 
@@ -184,7 +143,6 @@ def generate_tree(
         engine,
         max_transforms=max_transforms,
         time_limit=time_limit,
-        iteration_limit=0,
         return_first=return_first,
         search_scorers=search_rewards,
     )
@@ -194,75 +152,67 @@ def generate_tree(
     return engine
 
 
-def search_tree(engine: Engine, iterations: int):
-    _change_search_configs(
-        engine,
-        iteration_limit=engine.config.search.iteration_limit + iterations,
-    )
+def search_tree(engine: Engine, iterations: int | None = None):
+    if iterations:
+        _change_search_configs(
+            engine,
+            iteration_limit=engine.config.search.iteration_limit + iterations,
+        )
     engine.tree_search(show_progress=False)
 
 
 class _InitConfig(BaseModel):
-    search: retro_config.Search = retro_config.Search()
-    post_processing: retro_config.PostProcessing = retro_config.PostProcessing()
-    expansion: dict[str, retro_config.ExpansionPolicy] = {}
-    filter: dict[str, retro_config.FilterPolicy] = {}
-    stock: dict[str, retro_config.Stock] = {}
+    search: _config.Search = _config.Search()
+    post_processing: _config.PostProcessing = _config.PostProcessing()
+    expansion: dict[str, _config.ExpansionPolicy] = {}
+    filter: dict[str, _config.FilterPolicy] = {}
+    stock: dict[str, _config.Stock] = {}
 
 
 def _copy_engine(engine: Engine) -> Engine:
     with _LOCK:
-        new = _copy_dataclass(engine)
-        new.config = _copy_dataclass(new.config)
+        new = _utils.copy_dataclass(engine)
+        new.config = _utils.copy_dataclass(new.config)
 
         # Mutate search.algorithm_config.search_rewards in: search
-        new.config.search = _copy_dataclass(new.config.search)
-        new.config.search.algorithm_config = _copy_dataclass(new.config.search.algorithm_config)
+        new.config.search = _utils.copy_dataclass(new.config.search)
+        new.config.search.algorithm_config = _utils.copy_dataclass(
+            new.config.search.algorithm_config
+        )
 
         # Mutate _items in: cached_search[stock.__contains__(mol)/.stock._apply_stop_criteria]
-        stock = _copy_dataclass(new.stock)
+        stock = _utils.copy_dataclass(new.stock)
         if stock._use_stop_criteria:  # noqa: SLF001
-            stock._items = {k: _copy_dataclass(v) for k, v in stock._items.items()}  # noqa: SLF001
+            stock._items = {k: _utils.copy_dataclass(v) for k, v in stock._items.items()}  # noqa: SLF001
         new.stock = stock
         new.config.stock = stock
 
         # Mutate _items in: reset_cache[prepare_tree/.filter_policy.reset_cache]
-        filter_policy = _copy_dataclass(new.filter_policy)
+        filter_policy = _utils.copy_dataclass(new.filter_policy)
         filter_policy._items = {  # noqa: SLF001
-            k: _copy_dataclass(v)
+            k: _utils.copy_dataclass(v)
             for k, v in filter_policy._items.items()  # noqa: SLF001
         }
         new.filter_policy = filter_policy
         new.config.filter_policy = filter_policy
 
         # Mutate _items in: reset_cache[prepare_tree/.expansion_policy.reset_cache]
-        expansion_policy = _copy_dataclass(new.expansion_policy)
+        expansion_policy = _utils.copy_dataclass(new.expansion_policy)
         expansion_policy._items = {  # noqa: SLF001
-            k: _copy_dataclass(v)
+            k: _utils.copy_dataclass(v)
             for k, v in expansion_policy._items.items()  # noqa: SLF001
         }
         new.expansion_policy = expansion_policy
         new.config.expansion_policy = expansion_policy
 
         # Mutate _items in: search
-        scorers = _copy_dataclass(new.scorers)
-        scorers._items = {k: _copy_dataclass(v) for k, v in scorers._items.items()}  # noqa: SLF001
+        scorers = _utils.copy_dataclass(new.scorers)
+        scorers._items = {k: _utils.copy_dataclass(v) for k, v in scorers._items.items()}  # noqa: SLF001
         new.scorers = scorers
         new.config.scorers = scorers
 
         # TODO: copy logger
         return new
-
-
-def _copy_dataclass(obj: T) -> T:
-    new_obj = copy.copy(obj)
-
-    if hasattr(new_obj, "__dict__"):
-        for attr, value in list(new_obj.__dict__.items()):
-            if isinstance(value, collections.Collection):
-                new_obj.__dict__[attr] = copy.copy(value)
-
-    return new_obj
 
 
 def _change_search_configs(

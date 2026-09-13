@@ -3,9 +3,12 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 
+from aizynthfinder import aizynthfinder as aizynth_api
+from aizynthfinder.context.scoring import Scorer as BaseScorer
 from pydantic import BaseModel
 
 
+# Search
 class Algorithm(Enum):
     MCTS = "mcts"
 
@@ -48,15 +51,7 @@ class Search(BaseModel):
     break_bonds_operator: BreakBondsOperator = BreakBondsOperator.And
 
 
-class PostProcessing(BaseModel):
-    min_routes: int = 5
-    max_routes: int = 25
-    all_routes: bool = False
-    route_distance_model: Path | None = None
-    route_scorers: list[str] = ["state score"]
-    scorer_weights: list[float] | None = None
-
-
+# Expansion
 # TODO: Does it use in non template-based?
 class ExpansionPolicy(BaseModel):
     model: Path
@@ -71,6 +66,7 @@ class ExpansionPolicy(BaseModel):
     mask: Path | None = None
 
 
+# Filter
 # TODO: Does it use in non quick-filter?
 class FilterPolicy(BaseModel):
     model: Path
@@ -80,6 +76,67 @@ class FilterPolicy(BaseModel):
     use_remote_models: bool = False
 
 
+# Stock
 class Stock(BaseModel):
     path: Path
     type: str = "inchiset"
+
+
+# Score
+class PostProcessing(BaseModel):
+    min_routes: int = 5
+    max_routes: int = 25
+    all_routes: bool = False
+    route_distance_model: Path | None = None
+    route_scorers: list[str] = ["state score"]
+    scorer_weights: list[float] | None = None
+
+
+class ScalerType(Enum):
+    Squash = "squash"
+    MinMax = "min_max"
+    Power = "power"
+
+
+class Scaler(BaseModel):
+    """Scaler parameters, need to normalize scores."""
+
+    type: ScalerType = ScalerType.MinMax
+    min_val: int = 0
+    max_val: int = 1
+    reverse: bool = False
+
+
+class Score:
+    """Score class.
+
+    Range (in bracets - after rescaling if scaler is on):
+    - min value (0) - hard, bad
+    - max value (1)- easy, good
+
+    This is straight order for aizynthfinder,
+    all internal scorers have _reverse order parameter inside
+    """
+
+    # TODO: validate
+    _scorer_type: type
+    """Only BaseScorer types"""
+
+    straight_order: bool = True
+
+    def __init__(
+        self,
+        *,
+        scaler: Scaler | None = None,
+        **kwargs: dict,
+    ) -> None:
+        # TODO: scale
+        self.scaler = scaler
+        self.kwargs = kwargs
+
+    def create_scorer(self, config: aizynth_api.Configuration) -> BaseScorer:
+        return self._scorer_type(
+            config=config,
+            scaler_params=self.scaler.model_dump() if self.scaler else None,
+            **self.kwargs,
+        )
