@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from concurrent import futures
+from concurrent.futures import Future as LocalFuture
+import contextvars
 from pathlib import Path
 import threading
+import typing
 
 from aizynthfinder import aizynthfinder as aizynth_api
 from pydantic import BaseModel
@@ -10,6 +14,56 @@ from rdkit import Chem as rd
 from . import _utils, parameters as _config
 
 _LOCK = threading.Lock()
+
+
+IN = typing.ParamSpec("IN")
+OUT = typing.TypeVar("OUT")
+
+
+class LocalPool(typing.Generic[IN, OUT]):
+    """Pool for parallel launch local functions."""
+
+    def __init__(self, f: typing.Callable[IN, OUT], /, max_workers: int | None = None):
+        """Create local pool - wrapped non-parallel function to use it as parallel on local.
+
+        :param f: Function
+        :param max_workers: The maximum number of threads that can be used to
+        execute the given calls, defaults to None
+        """
+        self._f: typing.Callable[IN, OUT] = f
+        self._runner = futures.ThreadPoolExecutor(max_workers=max_workers)
+
+    def __repr__(self):
+        return f"<Parallelized pool: {self._f}>"
+
+    def __call__(_self_, *args: IN.args, **kwargs: IN.kwargs) -> LocalFuture[OUT]:
+        """Wrap function and make parallel variant to run it on local.
+
+        Save outside context in threads.
+        """
+        context = contextvars.copy_context()
+
+        def wrapper(*args: IN.args, **kwargs: IN.kwargs):
+            tokens = {var: var.set(value) for var, value in context.items()}
+            try:
+                result = _self_._f(*args, **kwargs)
+            finally:
+                for var, token in tokens.items():
+                    var.reset(token)
+            return result
+
+        return _self_._runner.submit(wrapper, *args, **kwargs)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self._runner.shutdown(wait=True)
+        return False
+
+    def shutdown(self):
+        """Stop external runner."""
+        self._runner.shutdown(wait=False)
 
 
 def mols_from_sdf(sdf_path: Path) -> list[rd.Mol]:
@@ -41,6 +95,7 @@ def mol_to_sdf(molecule: rd.Mol, path: Path, rewrite: bool = False):
     """
     path.parent.mkdir(exist_ok=True, parents=True)
     rdmols_to_save = []
+
     if path.exists() and not rewrite:
         saved_system = rd.ForwardSDMolSupplier(
             path.as_posix(),
