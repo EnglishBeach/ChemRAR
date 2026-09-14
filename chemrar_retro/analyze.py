@@ -24,9 +24,10 @@ class RouteInfo(BaseModel, arbitrary_types_allowed=True):
 class TreeInfo(BaseModel):
     tree_type: TreeType
     routes: list[RouteInfo]
-
     n_nodes: int
+
     max_transforms: int
+    max_score: float
     max_children: int
     n_solved: int
 
@@ -37,20 +38,23 @@ class TreeInfo(BaseModel):
 def analyze_tree(
     engine: retro.Engine,
     *,
-    scorers: list[str] | None = None,
+    scorer: str | None = None,
     top_n: int = 0,
+    only_solved: bool = True,
 ) -> TreeInfo:
-    # scorers = scorers or self.scorers
     top_n = top_n or 100
     selection = aizynth_api.RouteSelectionArguments(
-        return_all=not bool(top_n),
+        return_all=only_solved,
         nmin=top_n,
         nmax=top_n,
     )
-    engine.build_routes(scorer=scorers, selection=selection)
+    engine.build_routes(scorer=scorer, selection=selection)
 
     engine.routes.make_images()
-    routes = [_analyze_route(route=route, stock=engine.stock) for route in engine.routes]
+    routes = [
+        _analyze_route(route=route, stock=engine.stock)
+        for route in list(engine.routes)  # type: ignore
+    ]
 
     analysis_tree = engine.analysis
     tree_type = (
@@ -64,6 +68,7 @@ def analyze_tree(
         tree_type=tree_type,
         n_nodes=statistica["number_of_nodes"],
         max_transforms=statistica["max_transforms"],
+        max_score=statistica["top_score"],
         max_children=statistica["max_children"],
         n_solved=statistica["number_of_solved_routes"],
         policy_used_counts=statistica["policy_used_counts"],

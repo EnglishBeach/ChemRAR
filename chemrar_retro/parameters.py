@@ -105,6 +105,7 @@ class Scaler(BaseModel):
 
 # TODO: x=0.5 can be from 1 to 0 and clip set x=0
 class MinMaxScaler(Scaler):
+    name: str = "min_max"
     min_val: float
     max_val: float
     reverse: bool
@@ -117,6 +118,7 @@ class MinMaxScaler(Scaler):
 
 
 class SquashScaler(Scaler):
+    name: str = "squash"
     slope: float
     xoffset: float
     yoffset: float
@@ -127,6 +129,7 @@ class SquashScaler(Scaler):
 
 
 class PowerScaler(Scaler):
+    name: str = "power"
     base_coefficient: float
 
     @property
@@ -159,7 +162,7 @@ class Score:
         self,
         *,
         scaler: Scaler | None = None,
-        **kwargs: dict,
+        **kwargs,
     ) -> None:
         if not issubclass(self.scorer_type, BaseScorer):
             msg = f"{self.__class__.__name__}._scorer_type must be is subclass of BaseScorer"

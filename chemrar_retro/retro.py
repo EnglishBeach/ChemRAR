@@ -32,6 +32,32 @@ def mols_from_sdf(sdf_path: Path) -> list[rd.Mol]:
     return molecules
 
 
+def mol_to_sdf(molecule: rd.Mol, path: Path, rewrite: bool = False):
+    """Write mol to sdf file.
+
+    :param molecule: RDKit molecule
+    :param path: Path to save file .sdf
+    :param rewrite: Clear existing file or append new molecule, defaults to False
+    """
+    path.parent.mkdir(exist_ok=True, parents=True)
+    rdmols_to_save = []
+    if path.exists() and not rewrite:
+        saved_system = rd.ForwardSDMolSupplier(
+            path.as_posix(),
+            sanitize=False,
+            removeHs=False,
+        )
+
+        for saved_mol in saved_system:
+            rdmols_to_save.append(saved_mol)
+
+    rdmols_to_save.append(molecule)
+
+    with rd.SDWriter(path.as_posix()) as sdf:
+        for mol in rdmols_to_save:
+            sdf.write(mol)
+
+
 class Engine(aizynth_api.AiZynthFinder):
     @property
     def search_rewards(self) -> dict[str, float]:
