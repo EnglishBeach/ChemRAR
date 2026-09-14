@@ -125,5 +125,12 @@ skip-magic-trailing-comma = false
 
 [tool.pyright]
 include = ["chemrar_retro"]
-exclude = ["*/__init__.py", "**/__pycache__", "**/node_modules", ".*", ".venv"]
+exclude = [
+    "*/__init__.py",
+    "**/__pycache__",
+    "**/node_modules",
+    ".*",
+    ".venv",
+    'typings',
+]
 typeCheckingMode = "standard"

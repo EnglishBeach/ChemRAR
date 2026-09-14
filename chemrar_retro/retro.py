@@ -95,6 +95,7 @@ def mol_to_sdf(molecule: rd.Mol, path: Path, rewrite: bool = False):
     """
     path.parent.mkdir(exist_ok=True, parents=True)
     rdmols_to_save = []
+
     if path.exists() and not rewrite:
         saved_system = rd.ForwardSDMolSupplier(
             path.as_posix(),
