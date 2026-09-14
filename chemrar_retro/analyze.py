@@ -40,17 +40,16 @@ def analyze_tree(
     *,
     scorer: str | None = None,
     top_n: int = 0,
-    only_solved: bool = True,
 ) -> TreeInfo:
-    top_n = top_n or 100
+    top_n = top_n or 5
     selection = aizynth_api.RouteSelectionArguments(
-        return_all=only_solved,
+        return_all=True,
         nmin=top_n,
-        nmax=top_n,
+        nmax=top_n * 2,
     )
     engine.build_routes(scorer=scorer, selection=selection)
-
     engine.routes.make_images()
+
     routes = [
         _analyze_route(route=route, stock=engine.stock)
         for route in list(engine.routes)  # type: ignore
