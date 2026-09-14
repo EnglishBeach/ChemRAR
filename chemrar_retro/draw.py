@@ -1,0 +1,149 @@
+import math
+from pathlib import Path
+
+import networkx as nx
+from PIL import (
+    Image as pimage,
+    ImageChops as pchops,
+    ImageDraw as pdraw,
+    ImageFont as pfont,
+    ImageOps as pops,
+)
+from rdkit.Chem import Draw as rd_draw  # type: ignore
+
+from . import analyze
+
+
+def draw_routes_table(routes: list[analyze.RouteInfo]):
+    scores: list[dict[str, float]] = [i.score for i in routes]
+    images: list[pimage.Image] = [i.image for i in routes]
+
+    score_keys = list(routes[0].score)
+
+    titles = []
+    for i, score_data in enumerate(scores):
+        title = "\n".join(f"{score_data[key]:>4.1%}" for key in score_keys)
+        titles.append(f"{i})\n{title}")
+
+    cell_dx, cell_dy = (max(i.width for i in images), max(i.height for i in images))
+    processed_images = [
+        _add_border(
+            _add_title2(
+                _pad_to_size(
+                    image,
+                    size=(cell_dx, cell_dy),
+                ),
+                title,
+                font_size=32,
+            ),
+        )
+        for image, title in zip(images, titles, strict=True)
+    ]
+    title = "\n".join(titles)
+    return _combine_images_to_grid(processed_images, cols=2)
+
+
+def draw_molecule_tree(
+    g: nx.DiGraph,
+    out_path: str,
+    tmp_dir: Path = Path("tmp"),
+    sub_img_size: tuple = (450, 450),
+) -> None:
+    import pydot  # type: ignore # noqa: PLC0415
+
+    tmp_dir = tmp_dir.resolve()
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    dot = pydot.Dot(graph_type="digraph")
+    dot.set("dpi", "300")
+    ids = {node: f"n{i}" for i, node in enumerate(g.nodes)}
+
+    for node, node_id in ids.items():
+        mols = [i.rd_mol for i in node._state.mols]  # noqa: SLF001
+
+        img = rd_draw.MolsToGridImage(mols, molsPerRow=2, subImgSize=sub_img_size, returnPNG=False)
+        img = _trim_whitespace(img)
+
+        img_path = tmp_dir / f"{node_id}.png"
+        img.save(img_path)
+        dot.add_node(pydot.Node(node_id, shape="box", label="", image=img_path))
+
+    for u, v in g.edges:
+        dot.add_edge(pydot.Edge(ids[u], ids[v]))
+    dot.write_png(out_path)
+
+
+def _pad_to_size(
+    img: pimage.Image,
+    *,
+    size: tuple[int, int],
+    bg_color: tuple[int, int, int] = (255, 255, 255),
+) -> pimage.Image:
+    return pops.pad(img, size, color=bg_color)
+
+
+def _add_border(
+    img: pimage.Image,
+    *,
+    width: int = 3,
+    color: tuple[int, int, int] = (0, 0, 0),
+) -> pimage.Image:
+    return pops.expand(img, border=width, fill=color)
+
+
+def _add_title2(
+    img: pimage.Image,
+    title: str,
+    *,
+    center: bool = False,
+    font_size: int = 16,
+) -> pimage.Image:
+    text_color = (0, 0, 0)
+    text_x = 10
+    font = pfont.load_default(size=font_size)
+    bar_height = font_size + 12
+    overlay_color = (0, 0, 0, 0)
+
+    img = img.convert("RGBA")
+    # if center:
+    #     space = pimage.new("RGB", (img.width, img.height + bar_height), overlay_color)
+    #     space.paste(img, (0, bar_height))
+
+    # else:
+    space = pimage.new("RGBA", img.size, overlay_color)
+    draw = pdraw.Draw(space)
+
+    draw.text((text_x, 6), title, fill=text_color, font=font)
+    return pimage.alpha_composite(img, space).convert("RGB")
+
+
+def _combine_images_to_grid(
+    images: list[pimage.Image],
+    *,
+    cols: int | None = None,
+) -> pimage.Image:
+    padding: int = 10
+    bg_color: tuple[int, int, int] = (255, 255, 255)
+
+    n = len(images)
+    cols = cols or math.ceil(math.sqrt(n))
+    rows = math.ceil(n / cols)
+    cell_w = max(img.width for img in images)
+    cell_h = max(img.height for img in images)
+    total_w = cols * cell_w + (cols + 1) * padding
+    total_h = rows * cell_h + (rows + 1) * padding
+    grid = pimage.new("RGB", (total_w, total_h), bg_color)
+    for idx, img in enumerate(images):
+        row, col = divmod(idx, cols)
+        x = padding + col * (cell_w + padding) + (cell_w - img.width) // 2
+        y = padding + row * (cell_h + padding) + (cell_h - img.height) // 2
+        grid.paste(img, (x, y))
+    return grid
+
+
+def _trim_whitespace(img: pimage.Image, bg: tuple = (255, 255, 255)) -> pimage.Image:
+    bg_img = pimage.new(img.mode, img.size, bg)
+    diff = pimage.eval(pimage.blend(img, bg_img, 0.0).convert("L"), lambda x: 255 - x)
+
+    diff = pchops.difference(img.convert("RGB"), bg_img.convert("RGB"))
+    bbox = diff.getbbox()
+    return img.crop(bbox) if bbox else img

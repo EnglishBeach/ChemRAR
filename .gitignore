@@ -3,3 +3,4 @@ download
 __pycache__
 tmp
 data/model
+.venv.mamba_trash
